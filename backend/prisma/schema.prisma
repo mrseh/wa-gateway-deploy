@@ -1,0 +1,679 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// USERS & AUTHENTICATION
+// =====================================================
+
+model User {
+  id                      String   @id @default(uuid())
+  email                   String   @unique
+  passwordHash            String   @map("password_hash")
+  name                    String
+  phone                   String?
+  companyName             String?  @map("company_name")
+  
+  isVerified              Boolean  @default(false) @map("is_verified")
+  isActive                Boolean  @default(true) @map("is_active")
+  
+  verificationToken       String?  @map("verification_token")
+  verificationExpiresAt   DateTime? @map("verification_expires_at")
+  
+  resetToken              String?  @map("reset_token")
+  resetTokenExpires       DateTime? @map("reset_token_expires")
+  
+  lastLoginAt             DateTime? @map("last_login_at")
+  loginCount              Int      @default(0) @map("login_count")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  sessions                Session[]
+  subscriptions           Subscription[]
+  instances               Instance[]
+  olts                    Olt[]
+  ponPorts                PonPort[]
+  onus                    Onu[]
+  messageLogs             MessageLog[]
+  alertTemplates          AlertTemplate[]
+  transactions            Transaction[]
+  apiTokens               ApiToken[]
+  auditLogs               AuditLog[]
+  
+  @@map("users")
+}
+
+model Session {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  refreshToken            String   @map("refresh_token")
+  expiresAt               DateTime @map("expires_at")
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
+
+// =====================================================
+// PACKAGES & SUBSCRIPTIONS
+// =====================================================
+
+model Package {
+  id                      String   @id @default(uuid())
+  name                    String
+  slug                    String   @unique
+  description             String?
+  
+  maxInstances            Int      @map("max_instances")
+  maxMessagesPerDay       Int      @default(1000) @map("max_messages_per_day")
+  maxOlts                 Int      @default(0) @map("max_olts")
+  maxPonPorts             Int      @default(0) @map("max_pon_ports")
+  
+  price                   Decimal  @db.Decimal(12,2)
+  currency                String   @default("IDR")
+  durationDays            Int      @default(30) @map("duration_days")
+  
+  features                Json     @default("{}")
+  
+  isActive                Boolean  @default(true) @map("is_active")
+  isPopular               Boolean  @default(false) @map("is_popular")
+  sortOrder               Int      @default(0) @map("sort_order")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  subscriptions           Subscription[]
+  
+  @@map("packages")
+}
+
+model Subscription {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  packageId               String   @map("package_id")
+  
+  status                  String   @default("pending")
+  
+  startedAt               DateTime? @map("started_at")
+  expiresAt               DateTime? @map("expires_at")
+  cancelledAt             DateTime? @map("cancelled_at")
+  
+  autoRenew               Boolean  @default(false) @map("auto_renew")
+  renewalFailedCount      Int      @default(0) @map("renewal_failed_count")
+  
+  expiryNotified          Boolean  @default(false) @map("expiry_notified")
+  expiryNotificationSentAt DateTime? @map("expiry_notification_sent_at")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package                 Package  @relation(fields: [packageId], references: [id])
+  
+  // Relations
+  instances               Instance[]
+  olts                    Olt[]
+  transactions            Transaction[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+// =====================================================
+// INSTANCES (Evolution API)
+// =====================================================
+
+model Instance {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  subscriptionId          String?  @map("subscription_id")
+  
+  name                    String
+  instanceName            String   @unique @map("instance_name")
+  phoneNumber             String?  @map("phone_number")
+  
+  evolutionApiKey         String   @unique @map("evolution_api_key")
+  
+  status                  String   @default("inactive")
+  statusReason            String?  @map("status_reason")
+  
+  lastConnectedAt         DateTime? @map("last_connected_at")
+  connectionAttempts      Int      @default(0) @map("connection_attempts")
+  
+  qrCode                  String?  @map("qr_code") @db.Text
+  qrExpiresAt             DateTime? @map("qr_expires_at")
+  pairingCode             String?  @map("pairing_code")
+  
+  webhookUrl              String?  @map("webhook_url")
+  webhookSecret           String?  @map("webhook_secret")
+  webhookEvents           Json?    @map("webhook_events")
+  
+  autoReconnect           Boolean  @default(true) @map("auto_reconnect")
+  readReceipts            Boolean  @default(false) @map("read_receipts")
+  rejectCalls             Boolean  @default(false) @map("reject_calls")
+  
+  deviceInfo              Json?    @map("device_info")
+  lastError               String?  @map("last_error")
+  errorCount              Int      @default(0) @map("error_count")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription            Subscription? @relation(fields: [subscriptionId], references: [id])
+  
+  // Relations
+  messageLogs             MessageLog[]
+  webhookLogs             WebhookLog[]
+  apiTokens               ApiToken[]
+  oltsNotifications       Olt[]
+  usageStats              UsageStats[]
+  
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([status])
+  @@map("instances")
+}
+
+// =====================================================
+// OLT MANAGEMENT
+// =====================================================
+
+model Olt {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  subscriptionId          String?  @map("subscription_id")
+  
+  name                    String
+  vendor                  String
+  model                   String?
+  
+  ipAddress               String   @map("ip_address")
+  snmpCommunity           String   @default("public") @map("snmp_community")
+  snmpVersion             String   @default("v2c") @map("snmp_version")
+  telnetUsername          String?  @map("telnet_username")
+  telnetPassword          String?  @map("telnet_password")
+  telnetPort              Int      @default(23) @map("telnet_port")
+  
+  status                  String   @default("inactive")
+  lastPollAt              DateTime? @map("last_poll_at")
+  pollInterval            Int      @default(60)  @map("poll_interval")
+  
+  monitoringEnabled       Boolean  @default(true) @map("monitoring_enabled")
+  alertEnabled            Boolean  @default(true) @map("alert_enabled")
+  
+  notificationInstanceId  String?  @map("notification_instance_id")
+  notificationGroup       String?  @map("notification_group")
+  notificationNumbers     String[] @map("notification_numbers")
+  
+  systemName              String?  @map("system_name")
+  systemDescription       String?  @map("system_description")
+  systemUptime            BigInt?  @map("system_uptime")
+  systemContact           String?  @map("system_contact")
+  systemLocation          String?  @map("system_location")
+  firmwareVersion         String?  @map("firmware_version")
+  
+  totalPonPorts           Int      @default(0) @map("total_pon_ports")
+  totalOnus               Int      @default(0) @map("total_onus")
+  onlineOnus              Int      @default(0) @map("online_onus")
+  offlineOnus             Int      @default(0) @map("offline_onus")
+  
+  notes                   String?
+  location                String?
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription            Subscription? @relation(fields: [subscriptionId], references: [id])
+  notificationInstance    Instance? @relation(fields: [notificationInstanceId], references: [id])
+  
+  // Relations
+  ponPorts                PonPort[]
+  onus                    Onu[]
+  
+  @@unique([userId, ipAddress])
+  @@index([userId])
+  @@index([status])
+  @@index([monitoringEnabled])
+  @@map("olts")
+}
+
+// =====================================================
+// PON PORTS
+// =====================================================
+
+model PonPort {
+  id                      String   @id @default(uuid())
+  oltId                   String   @map("olt_id")
+  userId                  String   @map("user_id")
+  
+  portName                String   @map("port_name")
+  portIndex               Int      @map("port_index")
+  frame                   Int
+  slot                    Int
+  port                    Int
+  
+  maxOnus                 Int      @default(128) @map("max_onus")
+  maxDistance             Int      @default(20000) @map("max_distance")
+  
+  adminStatus             String   @default("up") @map("admin_status")
+  operStatus              String   @default("up") @map("oper_status")
+  
+  pollingEnabled          Boolean  @default(true) @map("polling_enabled")
+  pollingInterval         Int      @default(30) @map("polling_interval")
+  alertEnabled            Boolean  @default(true) @map("alert_enabled")
+  
+  utilizationWarning      Decimal  @default(80.00) @map("utilization_warning") @db.Decimal(5,2)
+  utilizationCritical     Decimal  @default(90.00) @map("utilization_critical") @db.Decimal(5,2)
+  rxPowerWarning          Decimal  @default(-27.00) @map("rx_power_warning") @db.Decimal(5,2)
+  rxPowerCritical         Decimal  @default(-30.00) @map("rx_power_critical") @db.Decimal(5,2)
+  temperatureWarning      Decimal  @default(70.00) @map("temperature_warning") @db.Decimal(5,2)
+  temperatureCritical     Decimal  @default(80.00) @map("temperature_critical") @db.Decimal(5,2)
+  berWarning              Decimal  @default(0.000000001) @map("ber_warning") @db.Decimal(15,10)
+  
+  description             String?
+  location                String?
+  notes                   String?
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  olt                     Olt      @relation(fields: [oltId], references: [id], onDelete: Cascade)
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  onus                    Onu[]
+  ponPortAlerts           PonPortAlert[]
+  
+  @@unique([oltId, frame, slot, port])
+  @@index([oltId])
+  @@index([userId])
+  @@index([pollingEnabled])
+  @@map("pon_ports")
+}
+
+model PonPortAlert {
+  id                      String   @id @default(uuid())
+  ponPortId               String   @map("pon_port_id")
+  
+  alertType               String   @map("alert_type")
+  severity                String
+  metricName              String?  @map("metric_name")
+  metricValue             Decimal? @map("metric_value") @db.Decimal(15,5)
+  thresholdValue          Decimal? @map("threshold_value") @db.Decimal(15,5)
+  
+  status                  String   @default("active")
+  acknowledgedAt          DateTime? @map("acknowledged_at")
+  acknowledgedBy          String?  @map("acknowledged_by")
+  resolvedAt              DateTime? @map("resolved_at")
+  
+  message                 String
+  details                 Json?
+  
+  notificationSent        Boolean  @default(false) @map("notification_sent")
+  notificationSentAt      DateTime? @map("notification_sent_at")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  ponPort                 PonPort  @relation(fields: [ponPortId], references: [id], onDelete: Cascade)
+  
+  @@index([ponPortId])
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("pon_port_alerts")
+}
+
+// =====================================================
+// ONUs
+// =====================================================
+
+model Onu {
+  id                      String   @id @default(uuid())
+  ponPortId               String   @map("pon_port_id")
+  oltId                   String   @map("olt_id")
+  userId                  String   @map("user_id")
+  
+  onuId                   Int      @map("onu_id")
+  serialNumber            String?  @map("serial_number")
+  macAddress              String?  @map("mac_address")
+  
+  frame                   Int
+  slot                    Int
+  port                    Int
+  
+  customerName            String?  @map("customer_name")
+  customerPhone           String?  @map("customer_phone")
+  customerAddress         String?  @map("customer_address")
+  customerNotes           String?  @map("customer_notes")
+  
+  status                  String   @default("offline")
+  adminStatus             String   @default("up") @map("admin_status")
+  operStatus              String   @default("down") @map("oper_status")
+  
+  authMode                String?  @map("auth_mode")
+  loid                    String?
+  password                String?
+  
+  profileName             String?  @map("profile_name")
+  serviceProfile          String?  @map("service_profile")
+  lineProfile             String?  @map("line_profile")
+  vlanMode                String?  @map("vlan_mode")
+  vlanId                  Int?     @map("vlan_id")
+  
+  rxPower                 Decimal? @map("rx_power") @db.Decimal(5,2)
+  txPower                 Decimal? @map("tx_power") @db.Decimal(5,2)
+  temperature             Decimal? @db.Decimal(5,2)
+  voltage                 Decimal? @db.Decimal(5,2)
+  
+  lastSeenAt              DateTime? @map("last_seen_at")
+  lastOnlineAt            DateTime? @map("last_online_at")
+  lastOfflineAt           DateTime? @map("last_offline_at")
+  lastDyingGaspAt         DateTime? @map("last_dying_gasp_at")
+  
+  uptimeSeconds           BigInt?  @map("uptime_seconds")
+  offlineCount            Int      @default(0) @map("offline_count")
+  dyingGaspCount          Int      @default(0) @map("dying_gasp_count")
+  
+  monitoringEnabled       Boolean  @default(true) @map("monitoring_enabled")
+  alertEnabled            Boolean  @default(true) @map("alert_enabled")
+  
+  notifyOnOffline         Boolean  @default(true) @map("notify_on_offline")
+  notifyOnOnline          Boolean  @default(false) @map("notify_on_online")
+  notifyOnDyingGasp       Boolean  @default(true) @map("notify_on_dying_gasp")
+  notifyOnSignalLow       Boolean  @default(true) @map("notify_on_signal_low")
+  
+  rxPowerWarning          Decimal  @default(-27.00) @map("rx_power_warning") @db.Decimal(5,2)
+  rxPowerCritical         Decimal  @default(-30.00) @map("rx_power_critical") @db.Decimal(5,2)
+  
+  description             String?
+  notes                   String?
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  ponPort                 PonPort  @relation(fields: [ponPortId], references: [id], onDelete: Cascade)
+  olt                     Olt      @relation(fields: [oltId], references: [id], onDelete: Cascade)
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([oltId, frame, slot, port, onuId])
+  @@index([ponPortId])
+  @@index([oltId])
+  @@index([userId])
+  @@index([status])
+  @@index([serialNumber])
+  @@index([customerPhone])
+  @@map("onus")
+}
+
+// =====================================================
+// MESSAGE LOGS
+// =====================================================
+
+model MessageLog {
+  id                      String   @id @default(uuid())
+  instanceId              String   @map("instance_id")
+  userId                  String   @map("user_id")
+  
+  direction               String
+  messageId               String?  @map("message_id")
+  
+  fromNumber              String?  @map("from_number")
+  toNumber                String?  @map("to_number")
+  isGroup                 Boolean  @default(false) @map("is_group")
+  groupId                 String?  @map("group_id")
+  
+  messageType             String?  @map("message_type")
+  messageContent          String?  @map("message_content") @db.Text
+  mediaUrl                String?  @map("media_url")
+  caption                 String?
+  
+  status                  String   @default("pending")
+  errorMessage            String?  @map("error_message")
+  
+  rawData                 Json?    @map("raw_data")
+  
+  sentAt                  DateTime? @map("sent_at")
+  deliveredAt             DateTime? @map("delivered_at")
+  readAt                  DateTime? @map("read_at")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  instance                Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([instanceId])
+  @@index([userId])
+  @@index([direction])
+  @@index([status])
+  @@index([createdAt])
+  @@index([toNumber])
+  @@map("message_logs")
+}
+
+model WebhookLog {
+  id                      String   @id @default(uuid())
+  instanceId              String   @map("instance_id")
+  
+  eventType               String   @map("event_type")
+  sourceIp                String?  @map("source_ip")
+  
+  requestHeaders          Json?    @map("request_headers")
+  requestBody             Json     @map("request_body")
+  
+  responseStatus          Int?     @map("response_status")
+  responseBody            String?  @map("response_body")
+  
+  processed               Boolean  @default(false)
+  processedAt             DateTime? @map("processed_at")
+  errorMessage            String?  @map("error_message")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  instance                Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  @@index([instanceId])
+  @@index([eventType])
+  @@index([processed])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
+
+// =====================================================
+// ALERT TEMPLATES
+// =====================================================
+
+model AlertTemplate {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  
+  name                    String
+  category                String?
+  
+  emoji                   String?
+  messageTemplate         String   @map("message_template") @db.Text
+  variables               Json     @default("[]")
+  
+  isActive                Boolean  @default(true) @map("is_active")
+  isDefault               Boolean  @default(false) @map("is_default")
+  
+  usageCount              Int      @default(0) @map("usage_count")
+  lastUsedAt              DateTime? @map("last_used_at")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([category])
+  @@map("alert_templates")
+}
+
+// =====================================================
+// TRANSACTIONS
+// =====================================================
+
+model Transaction {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  subscriptionId          String?  @map("subscription_id")
+  
+  invoiceNumber           String   @unique @map("invoice_number")
+  amount                  Decimal  @db.Decimal(12,2)
+  currency                String   @default("IDR")
+  
+  paymentMethod           String?  @map("payment_method")
+  paymentStatus           String   @default("pending") @map("payment_status")
+  
+  pgProvider              String?  @map("pg_provider")
+  pgTransactionId         String?  @map("pg_transaction_id")
+  pgPaymentUrl            String?  @map("pg_payment_url")
+  pgResponse              Json?    @map("pg_response")
+  
+  paidAt                  DateTime? @map("paid_at")
+  expiredAt               DateTime? @map("expired_at")
+  
+  description             String?
+  notes                   String?
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription            Subscription? @relation(fields: [subscriptionId], references: [id])
+  
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([paymentStatus])
+  @@index([pgTransactionId])
+  @@map("transactions")
+}
+
+// =====================================================
+// USAGE STATISTICS
+// =====================================================
+
+model UsageStats {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  instanceId              String?  @map("instance_id")
+  
+  date                    DateTime @db.Date
+  
+  messagesSent            Int      @default(0) @map("messages_sent")
+  messagesReceived        Int      @default(0) @map("messages_received")
+  messagesFailed          Int      @default(0) @map("messages_failed")
+  
+  messagesQuota           Int?     @map("messages_quota")
+  quotaExceeded           Boolean  @default(false) @map("quota_exceeded")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  instance                Instance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  @@unique([instanceId, date])
+  @@index([userId])
+  @@index([instanceId])
+  @@index([date])
+  @@map("usage_stats")
+}
+
+// =====================================================
+// API TOKENS
+// =====================================================
+
+model ApiToken {
+  id                      String   @id @default(uuid())
+  userId                  String   @map("user_id")
+  instanceId              String?  @map("instance_id")
+  
+  tokenHash               String   @unique @map("token_hash")
+  tokenPrefix             String?  @map("token_prefix")
+  
+  name                    String?
+  description             String?
+  
+  isActive                Boolean  @default(true) @map("is_active")
+  
+  lastUsedAt              DateTime? @map("last_used_at")
+  usageCount              Int      @default(0) @map("usage_count")
+  
+  expiresAt               DateTime? @map("expires_at")
+  
+  rateLimitPerMinute      Int      @default(60) @map("rate_limit_per_minute")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance                Instance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([instanceId])
+  @@index([isActive])
+  @@map("api_tokens")
+}
+
+// =====================================================
+// AUDIT LOG
+// =====================================================
+
+model AuditLog {
+  id                      String   @id @default(uuid())
+  userId                  String?  @map("user_id")
+  
+  action                  String
+  entityType              String?  @map("entity_type")
+  entityId                String?  @map("entity_id")
+  
+  description             String?
+  changes                 Json?
+  
+  ipAddress               String?  @map("ip_address")
+  userAgent               String?  @map("user_agent")
+  
+  createdAt               DateTime @default(now()) @map("created_at")
+  
+  user                    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// =====================================================
+// SYSTEM SETTINGS
+// =====================================================
+
+model SystemSetting {
+  id                      String   @id @default(uuid())
+  key                     String   @unique
+  value                   String?
+  description             String?
+  isPublic                Boolean  @default(false) @map("is_public")
+  
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  @@map("system_settings")
+}
