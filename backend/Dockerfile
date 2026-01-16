@@ -1,50 +1,59 @@
-# Multi-stage build for production
-
+# Multi-stage Dockerfile for Production
 # Stage 1: Dependencies
-FROM node:20-alpine AS deps
+FROM node:18-alpine AS dependencies
+
 WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    postgresql-client
 
 # Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
 
-# Install dependencies
+# Install production dependencies
 RUN npm ci --only=production && \
-    npx prisma generate
+    npm cache clean --force
 
-# Stage 2: Builder
-FROM node:20-alpine AS builder
+# Stage 2: Build
+FROM node:18-alpine AS builder
+
 WORKDIR /app
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package*.json ./
+# Copy dependencies from previous stage
+COPY --from=dependencies /app/node_modules ./node_modules
 
 # Copy source code
 COPY . .
 
-# Generate Prisma Client
-RUN npx prisma generate
+# Build if needed (for TypeScript projects, skip for pure Node.js)
+# RUN npm run build
 
 # Stage 3: Production
-FROM node:20-alpine AS production
-WORKDIR /app
+FROM node:18-alpine AS production
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# Install system dependencies
+RUN apk add --no-cache \
+    dumb-init \
+    postgresql-client \
+    curl
 
-# Create non-root user
+# Create app user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Copy necessary files
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
-COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
+WORKDIR /app
+
+# Copy dependencies and source
+COPY --from=dependencies --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --chown=nodejs:nodejs . .
 
 # Create logs directory
-RUN mkdir -p /app/logs && chown nodejs:nodejs /app/logs
+RUN mkdir -p /app/logs && \
+    chown -R nodejs:nodejs /app/logs
 
 # Switch to non-root user
 USER nodejs
@@ -53,8 +62,8 @@ USER nodejs
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node healthcheck.js
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

@@ -1,10 +1,6 @@
 #!/bin/bash
+echo "Checking services..."
 
-# Health Check Script
-
-echo "🏥 Running health checks..."
-
-# Check services
 services=("nginx" "frontend" "api" "evolution-api" "postgres" "redis")
 
 for service in "${services[@]}"; do
@@ -15,10 +11,4 @@ for service in "${services[@]}"; do
     fi
 done
 
-# Check API health
-echo ""
-echo "Checking API health endpoint..."
-curl -f http://localhost:8000/api/v1/health || echo "✗ API health check failed"
-
-echo ""
-echo "Health check complete!"
+curl -sf http://localhost:8000/api/v1/health > /dev/null && echo "✓ API health OK" || echo "✗ API health failed"

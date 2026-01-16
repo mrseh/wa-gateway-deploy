@@ -1,0 +1,228 @@
+groups:
+  - name: api_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+
+      - alert: APIDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API is down"
+          description: "API instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High response time"
+          description: "95th percentile response time is {{ $value }}s on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+  - name: database_alerts
+    interval: 30s
+    rules:
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: HighConnectionCount
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High number of database connections"
+          description: "{{ $value }} connections active on {{ $labels.instance }}"
+
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining on {{ $labels.instance }}"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_statements_total_time[5m]) / rate(pg_stat_statements_calls[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}ms on {{ $labels.instance }}"
+
+  - name: redis_alerts
+    interval: 30s
+    rules:
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: HighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis high memory usage"
+          description: "{{ $value | humanizePercentage }} memory used on {{ $labels.instance }}"
+
+      - alert: HighKeyEvictionRate
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "High Redis key eviction rate"
+          description: "{{ $value }} keys/sec being evicted on {{ $labels.instance }}"
+
+  - name: evolution_alerts
+    interval: 30s
+    rules:
+      - alert: EvolutionAPIDown
+        expr: up{job="evolution-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: whatsapp
+        annotations:
+          summary: "Evolution API is down"
+          description: "Evolution API instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: MultipleInstancesDisconnected
+        expr: evolution_disconnected_instances > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: whatsapp
+        annotations:
+          summary: "Multiple WhatsApp instances disconnected"
+          description: "{{ $value }} instances are disconnected on {{ $labels.instance }}"
+
+      - alert: HighMessageQueueSize
+        expr: evolution_message_queue_size > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: whatsapp
+        annotations:
+          summary: "High message queue size"
+          description: "{{ $value }} messages queued on {{ $labels.instance }}"
+
+  - name: pon_monitoring_alerts
+    interval: 60s
+    rules:
+      - alert: PONPortHighUtilization
+        expr: pon_port_utilization > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: pon
+        annotations:
+          summary: "PON port high utilization"
+          description: "PON port {{ $labels.port_name }} utilization is {{ $value }}% on OLT {{ $labels.olt_name }}"
+
+      - alert: PONPortHighTemperature
+        expr: pon_port_temperature > 75
+        for: 5m
+        labels:
+          severity: warning
+          component: pon
+        annotations:
+          summary: "PON port high temperature"
+          description: "PON port {{ $labels.port_name }} temperature is {{ $value }}°C on OLT {{ $labels.olt_name }}"
+
+      - alert: PONPortLowHealthScore
+        expr: pon_port_health_score < 50
+        for: 10m
+        labels:
+          severity: warning
+          component: pon
+        annotations:
+          summary: "PON port low health score"
+          description: "PON port {{ $labels.port_name }} health score is {{ $value }} on OLT {{ $labels.olt_name }}"
+
+      - alert: HighONUOfflineRate
+        expr: (pon_port_offline_onus / pon_port_total_onus) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: pon
+        annotations:
+          summary: "High ONU offline rate"
+          description: "{{ $value | humanizePercentage }} ONUs offline on PON port {{ $labels.port_name }}"
+
+  - name: system_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: SystemLoadHigh
+        expr: node_load15 / count(node_cpu_seconds_total{mode="system"}) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "System load is high"
+          description: "15-minute load average is {{ $value }} on {{ $labels.instance }}"
+
+      - alert: DiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High disk I/O"
+          description: "Disk I/O utilization is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
